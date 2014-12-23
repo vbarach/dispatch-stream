@@ -99,8 +99,22 @@ describe('#DispatchStream', function(){
             return message.nested.nonexistent.type;
         }
     });
-});
 
+    it('should execute an asynchronous typeGetter function', function(done){
+        var dispatchStream = new DispatchStream(typeGetter);
+        var throughStream = createThrough();
+        var message = {type: 'type', data: {hello: 'world'}};
+
+        throughStream.on('data', done.bind(null, null));
+
+        dispatchStream.register('type', throughStream);
+        dispatchStream.write(message);
+
+        function typeGetter(message, callback){
+           return process.nextTick(callback.bind(null, null, message.type));
+        }
+    });
+});
 
 function createThrough(){
     return new Through({objectMode: true});

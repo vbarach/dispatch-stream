@@ -4,14 +4,16 @@ var util = require('util');
 module.exports = DispatchStream;
 
 function DispatchStream(typeGetter, options){
-    if(!(this instanceof DispatchStream)) return new DispatchStream(type, options);
+    if(!(this instanceof DispatchStream)) return new DispatchStream(typeGetter, options);
     if(!typeGetter) throw new Error('Expected a string or a function as first arg instead got : ' + typeGetter.toString());
 
     options || (options = {});
     options.objectMode = true;
+
     Writable.call(this, options);
 
     this._typeGetter = typeof typeGetter === 'string' ? _propGetter(typeGetter) : typeGetter;
+    this._isAsync = this._typeGetter.length === 2;
     this._streams = {};
 }
 
@@ -23,22 +25,39 @@ DispatchStream.prototype.register = function(type, stream){
 };
 
 DispatchStream.prototype._write = function(message, encoding, callback){
-    try {
-        var type = this._typeGetter(message);
-    } catch(err){
-        return process.nextTick(callback.bind(null, err));
+    var _this = this;
+
+    if(this._isAsync){
+        return this._typeGetter(message, function(err, type){
+            if(err) return callback(err);
+            return write(type, message);
+        });
+    } else {
+        var type = _tryGet(this._typeGetter, message);
+        if(type instanceof Error) return callback(type);
+        return write(type, message);
     }
 
-    var stream = this._streams[type];
+    function write(type, message){
+        var stream = _this._streams[type];
+        if(!stream) return callback(new Error('No stream found for type : ' + type));
 
-    if(!stream) return callback(new Error('No stream found for type : ' + type));
-
-    stream.push.call(stream, message);
-    return process.nextTick(callback);
+        (stream.write ||stream.push).call(stream, message);
+        return callback();
+    }
 };
 
-function _propGetter(type){
+function _propGetter(typeProp){
     return function(message){
-        return message[type];
+        return message[typeProp];
     };
+}
+
+function _tryGet(fn, message){
+    try {
+        return fn(message);
+    } catch(err){
+        err.message = 'Error in typeGetter function : ' + err.message;
+        return err;
+    }
 }
