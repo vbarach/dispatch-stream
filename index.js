@@ -26,25 +26,27 @@ DispatchStream.prototype.register = function(type, stream){
 
 DispatchStream.prototype._write = function(message, encoding, callback){
     var _this = this;
-
     if(this._isAsync){
         return this._typeGetter(message, function(err, type){
             if(err) return callback(err);
-            return write(type, message);
+            return _this.doWrite(type, message, callback);
         });
     } else {
-        var type = _tryGet(this._typeGetter, message);
-        if(type instanceof Error) return callback(type);
-        return write(type, message);
+        var typeOrError = _tryGet(this._typeGetter, message);
+        if(typeOrError instanceof Error) return callback(typeOrError);
+        return _this.doWrite(typeOrError, message, callback);
     }
+};
 
-    function write(type, message){
-        var stream = _this._streams[type];
-        if(!stream) return callback(new Error('No stream found for type : ' + type));
+DispatchStream.prototype.doWrite = function(type, message, callback){
+    var stream = this._streams[type];
+    if(!stream) return callback(new Error('No stream found for type : ' + type));
 
-        (stream.write ||stream.push).call(stream, message);
-        return callback();
-    }
+    var method = (stream.write || stream.push);
+    if(!method) return callback(new Error('object is not a stream'));
+
+    method.call(stream, message);
+    return callback();
 };
 
 function _propGetter(typeProp){
